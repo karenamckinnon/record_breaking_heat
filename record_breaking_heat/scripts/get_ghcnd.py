@@ -43,7 +43,7 @@ for ct_v, this_var in enumerate(var_names):
         else:
             inventory_dict[this_var] = this_dict
 
-# Select stations to use (US only)
+# Select stations to use (US and Canada only)
 yr_start = 1960
 yr_end = 2021
 
@@ -57,7 +57,9 @@ for ct_v, this_var in enumerate(var_names):
         this_start = float(key['start'])
         this_end = float(key['end'])
 
-        if ((this_name[:2] == 'US') & (this_start <= yr_start) & (this_end >= yr_end)):
+        in_US_CA = (this_name[:2] == 'US') | (this_name[:2] == 'CA')
+
+        if (in_US_CA & (this_start <= yr_start) & (this_end >= yr_end)):
 
             # Pass through any station that has TMIN or TMAX
             if this_name not in station_list:
@@ -121,7 +123,7 @@ data2str = [29, 34]
 
 for counter, this_station in enumerate(station_list):
     print('%i/%i' % (counter, len(station_list)))
-    this_file = '%s/USHCN/%s.dly' % (ghcnd_dir, this_station)
+    this_file = '%s/GHCND/ghcnd_all/%s.dly' % (ghcnd_dir, this_station)
     data_vec = np.nan*np.ones(len(date_str))
 
     if os.path.isfile(this_file):

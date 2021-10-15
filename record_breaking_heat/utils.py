@@ -6,6 +6,7 @@ import xarray as xr
 
 def fit_seasonal_trend_model(ds, this_var, start_year=1960):
     """Fit a basic statistical model to data: linear trend in time, 5 seasonal bases, annual basis can change in time.
+    Designed for a single time series (a la station data).
 
     Parameters
     ----------
