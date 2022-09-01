@@ -7,6 +7,8 @@ from datetime import datetime
 import cartopy.feature as cfeature
 import cartopy.crs as ccrs
 from matplotlib import colors
+from scipy import stats
+from statsmodels.regression.quantile_regression import QuantReg
 
 
 def get_ghcnd_inventory_dict(var_names, f_inventory):
@@ -566,3 +568,197 @@ def plot_PWN(ax, extent, plotcrs, datacrs, cmap,
     ax.add_feature(states_provinces, edgecolor='gray', zorder=4)
 
     return cf, cp, sc
+
+
+def calc_station_stats(ds_fitted, varnames, doy_start, doy_end, last_year=2020):
+    """Calculate skewness, kurtosis, and standard deviation for each station time series.
+    It is necessary to loop through because scipy.stats cannot handle missing data.
+
+    Parameters
+    ----------
+    ds_fitted : xarray.Dataset
+        Contains temperature anomalies from station data
+    varnames : list
+        List of variable names in ds_fitted
+    doy_start : int
+        First day of year of desired season
+    doy_end : int
+        Last day of year of desired season
+    last_year : int
+        The last year to include in the estimation of the stats. Default is 2020 so that 2021 is not included.
+
+    Returns
+    -------
+    ds_S : xarray.Dataset
+        The skewness of each variable
+    ds_K : xarray.Dataset
+        The kurtosis of each variable
+    ds_sigma : xarray.Dataset
+        The standard deviation of each variable
+    ds_rho1 : xarray.Dataset
+        The lag-1 day autocorrelation of each variable
+    """
+
+    time_idx = (ds_fitted.time.dt.dayofyear >= doy_start) & (ds_fitted.time.dt.dayofyear <= doy_end)
+
+    ds_S = []
+    ds_K = []
+    ds_sigma = []
+    ds_rho1 = []
+
+    for this_var in varnames:
+
+        S = []
+        K = []
+        sigma = []
+        rho1 = []
+
+        for this_station in ds_fitted.station:
+
+            this_ts = ds_fitted['%s_residual' % this_var]
+            # for autocorrelation:
+            this_ts_lag1 = this_ts.copy().roll(time=-1, roll_coords=False)
+
+            this_ts = this_ts.sel(station=this_station, time=time_idx).sel(time=slice('%04i' % last_year))
+            this_ts_lag1 = this_ts_lag1.sel(station=this_station,
+                                            time=time_idx).sel(time=slice('%04i' % last_year))
+
+            has_data = ~np.isnan(this_ts)
+            this_ts = this_ts[has_data]
+            S.append(stats.skew(this_ts))
+            K.append(stats.kurtosis(this_ts))
+            sigma.append(np.std(this_ts))
+            rho1.append(xr.corr(this_ts, this_ts_lag1, dim='time').values)
+
+        da_S = ds_fitted['%s_residual' % this_var][:, 0].copy(data=S).rename('S_%s' % this_var)
+        da_K = ds_fitted['%s_residual' % this_var][:, 0].copy(data=K).rename('K_%s' % this_var)
+        da_sigma = ds_fitted['%s_residual' % this_var][:, 0].copy(data=sigma).rename('sigma_%s' % this_var)
+        da_rho1 = ds_fitted['%s_residual' % this_var][:, 0].copy(data=rho1).rename('rho1_%s' % this_var)
+
+        ds_S.append(da_S)
+        ds_K.append(da_K)
+        ds_sigma.append(da_sigma)
+        ds_rho1.append(da_rho1)
+
+    ds_S = xr.merge(ds_S)
+    ds_K = xr.merge(ds_K)
+    ds_sigma = xr.merge(ds_sigma)
+    ds_rho1 = xr.merge(ds_rho1)
+
+    return ds_S, ds_K, ds_sigma, ds_rho1
+
+
+def fit_qr_trend(da, doy_start, doy_end, qs_to_fit, nboot, max_iter=10000, lastyear=2020):
+    """Fit a quantile regression model with GMT as covariate.
+
+    Parameters
+    ----------
+    da : xr.DataArray
+        Contains desired variable as a function of station and time
+    doy_start : int
+        Day of year of beginning of season being fit
+    doy_end : int
+        Day of year of end of the season being fit
+    qs_to_fit : np.array
+        Array of quantiles to fit (independently - noncrossing is not enforced)
+    nboot : int
+        Number of times to bootstrap data (block size of one year) and refit QR model
+    max_iter : int
+        Maximum number of iterations for QuantReg model
+    lastyear : int
+        Last year to calculate trend with
+
+    Returns
+    -------
+    ds_QR : xr.Dataset
+        Contains all quantile regression trends and pvals, as well as bootstrapped trends
+
+    """
+
+    # fit on this data only
+    time_idx = (da.time.dt.dayofyear >= doy_start) & (da.time.dt.dayofyear <= doy_end)
+    this_da = da.sel(time=time_idx).sel(time=slice('%04i' % lastyear)).copy()
+
+    # global mean temperature time series as a stand-in for climate change in the regression model
+    da_gmt = get_GMT()
+    # resample GMT to daily, and match data time stamps
+    da_gmt = da_gmt.resample(time='1D').interpolate('linear')
+    cc = da_gmt.sel(time=this_da['time'])
+    cc -= np.mean(cc)
+
+    beta_qr = np.nan*np.ones((len(this_da.station), len(qs_to_fit)))
+    pval_qr = np.nan*np.ones((len(this_da.station), len(qs_to_fit)))
+    beta_qr_boot = np.nan*np.ones((len(this_da.station), len(qs_to_fit), nboot))
+
+    np.random.seed(123)
+
+    for station_count, this_station in enumerate(this_da.station):
+        print('%i/%i' % (station_count, len(this_da.station)))
+
+        this_x = cc
+        this_y = this_da.sel(station=this_station)
+
+        pl = ~np.isnan(this_y)
+        this_x_vec = this_x[pl].values
+        this_y_vec = this_y[pl].values
+
+        # Add jitter since data is rounded to 0.1
+        half_width = 0.05
+        jitter = 2*half_width*np.random.rand(len(this_y_vec)) - half_width
+        this_y_vec += jitter
+
+        if len(this_x_vec) == 0:
+            continue
+
+        this_x_vec = np.vstack((np.ones(len(this_x_vec)), this_x_vec)).T
+
+        model = QuantReg(this_y_vec, this_x_vec, )
+
+        for ct_q, q in enumerate(qs_to_fit):
+            mfit = model.fit(q=q, max_iter=max_iter)
+            beta_qr[station_count, ct_q] = mfit.params[-1]
+            pval_qr[station_count, ct_q] = mfit.pvalues[-1]
+
+        # Bootstrap with block size of one year to assess significance of differences
+        yrs = np.unique(this_y['time.year'])
+        for kk in range(nboot):
+
+            new_yrs = np.random.choice(yrs, size=len(yrs))
+            x_boot = []
+            y_boot = []
+            for yy in new_yrs:
+                x_boot.append(this_x.sel(time=slice('%04i' % yy, '%04i' % yy)))
+                y_boot.append(this_y.sel(time=slice('%04i' % yy, '%04i' % yy)))
+
+            x_boot = xr.concat(x_boot, dim='time')
+            y_boot = xr.concat(y_boot, dim='time')
+
+            pl = ~np.isnan(y_boot)
+            this_x_vec = x_boot[pl].values
+            this_y_vec = y_boot[pl].values
+
+            # Add jitter since data is rounded to 0.1
+            jitter = 2*half_width*np.random.rand(len(this_y_vec)) - half_width
+            this_y_vec += jitter
+
+            if len(this_x_vec) == 0:
+                continue
+
+            this_x_vec = np.vstack((np.ones(len(this_x_vec)), this_x_vec)).T
+
+            model = QuantReg(this_y_vec, this_x_vec)
+
+            for ct_q, q in enumerate(qs_to_fit):
+                mfit = model.fit(q=q, max_iter=max_iter)
+                beta_qr_boot[station_count, ct_q, kk] = mfit.params[-1]
+
+    ds_QR = xr.Dataset(data_vars={'beta_QR': (('station', 'qs'), beta_qr),
+                                  'pval_QR': (('station', 'qs'), pval_qr),
+                                  'beta_QR_boot': (('station', 'qs', 'sample'), beta_qr_boot)},
+                       coords={'station': da.station,
+                               'qs': qs_to_fit,
+                               'sample': np.arange(nboot),
+                               'lat': da.lat,
+                               'lon': da.lon})
+
+    return ds_QR
