@@ -2,12 +2,18 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 import os
+from subprocess import check_call
 
 ghcnd_dir = '/home/data/GHCND'
 f_station_list = '%s/ghcnd-stations.txt' % ghcnd_dir
 f_inventory = '%s/ghcnd-inventory.txt' % ghcnd_dir
 
-datadir = '/home/kmckinnon/record_breaking_heat/data'
+yr_start = 1900
+yr_end = 2021
+
+datadir = '/home/kmckinnon/record_breaking_heat/data/%04i-%04i' % (yr_start, yr_end)
+cmd = 'mkdir -p %s' % datadir
+check_call(cmd.split())
 var_names = (['TMIN', 'TMAX'])
 
 # Pull information from inventory
@@ -43,9 +49,6 @@ for ct_v, this_var in enumerate(var_names):
         else:
             inventory_dict[this_var] = this_dict
 
-# Select stations to use (US and Canada only)
-yr_start = 1960
-yr_end = 2021
 
 for ct_v, this_var in enumerate(var_names):
     station_list = []
