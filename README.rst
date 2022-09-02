@@ -2,31 +2,20 @@
 Record-breaking heat
 ====================
 
+This repository contains the code associated with the analyses in McKinnon and Simpson (2022), How unexpected was the record breaking PNW heatwave?, currently under review at GRL. Preprint is available at https://www.essoar.org/doi/abs/10.1002/essoar.10511999.1.
 
-.. image:: https://img.shields.io/pypi/v/record_breaking_heat.svg
-        :target: https://pypi.python.org/pypi/record_breaking_heat
+The analysis relies on four different datasets which must be acquired in advance of running the code. I have provided scripts to do so:
 
-.. image:: https://img.shields.io/travis/karenamckinnon/record_breaking_heat.svg
-        :target: https://travis-ci.com/karenamckinnon/record_breaking_heat
+* For CESM2-LE, scripts/save_cesm2.py can be run on a computer with access to glade campaign storage.
+* For GHCND, scripts/get_ghcnd.py can be used to download and process GHCND data.
+* For ISD, https://github.com/karenamckinnon/helpful_utilities/blob/master/helpful_utilities/download_isd.py can be used to download and process ISD. 
+* For EC, data should first be bulk downloaded with scripts/get_BC_data.sh, then processed with scripts/get_EC.py
 
-.. image:: https://readthedocs.org/projects/record-breaking-heat/badge/?version=latest
-        :target: https://record-breaking-heat.readthedocs.io/en/latest/?version=latest
-        :alt: Documentation Status
+In most cases, (my) directories are hard-coded in, so will need to be updated appropriately. 
 
+The easiest way to interact with the code is likely with the jupyter notebook in notebooks/GRL_figures, but the same code is provided in script form in GRL_figures.py.
 
-
-
-How unexpected was the record breaking PNW heatwave?
-
-
-* Free software: MIT license
-* Documentation: https://record-breaking-heat.readthedocs.io.
-
-
-Features
---------
-
-* TODO
+Please be in touch (kmckinnon@ucla.edu) if you use the code, or have questions/comments.
 
 Credits
 -------
