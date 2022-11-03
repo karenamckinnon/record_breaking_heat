@@ -118,7 +118,7 @@ def get_ghcnd_station_list(var_names, inventory_dict, lats_use, lons_use, yr_sta
     return station_list, lats, lons
 
 
-def get_ghcnd_ds(station_list, var_names, datadir, yr_start, yr_end):
+def get_ghcnd_ds(station_list, var_names, datadir, yr_start, yr_end, subset_years=True):
     """Create dataset of desired GHCND data at desired stations for desired timespan.
 
     Parameters
@@ -134,6 +134,8 @@ def get_ghcnd_ds(station_list, var_names, datadir, yr_start, yr_end):
         First year in which the station should have data
     yr_end : int
         Last year in which the station should have data
+    subset_years : bool
+        Indicate whether dataset should be limited to specified years
 
     Returns
     -------
@@ -160,7 +162,8 @@ def get_ghcnd_ds(station_list, var_names, datadir, yr_start, yr_end):
         ds.append(all_data)
 
     ds_T = xr.merge(ds)
-    ds_T = ds_T.sel(time=slice('%04i' % yr_start, '%04i' % yr_end))
+    if subset_years:
+        ds_T = ds_T.sel(time=slice('%04i' % yr_start, '%04i' % yr_end))
 
     return ds_T
 
@@ -445,7 +448,15 @@ def fit_seasonal_trend(da, varname, nseasonal, ninteract, lastyear=2020, return_
         ds_fitted['%s_residual' % varname] = xr.concat(ds_residual, dim='station')
 
     else:  # reanalysis
-        nt_fit, nlat, nlon = da_fit.shape
+        s = da_fit.shape
+        if len(s) == 3:
+            nt_fit = s[0]
+            nlat = s[1]
+            nlon = s[2]
+        elif len(s) == 1:  # case where we are considering one gridbox only
+            nt_fit = s
+            nlat = 1
+            nlon = 1
         vals = da_fit.values.reshape((nt_fit, nlat*nlon))
         y_mat = np.matrix(vals)
 
@@ -691,14 +702,17 @@ def fit_qr_trend(da, doy_start, doy_end, qs_to_fit, nboot, max_iter=10000, lasty
     beta_qr_boot = np.nan*np.ones((len(this_da.station), len(qs_to_fit), nboot))
 
     np.random.seed(123)
-
     for station_count, this_station in enumerate(this_da.station):
-        print('%i/%i' % (station_count, len(this_da.station)))
+        if station_count % 100 == 0:
+            print('%i/%i' % (station_count, len(this_da.station)))
 
         this_x = cc
         this_y = this_da.sel(station=this_station)
 
         pl = ~np.isnan(this_y)
+        if np.sum(pl) == 0:  # case of no data
+            continue
+
         this_x_vec = this_x[pl].values
         this_y_vec = this_y[pl].values
 
@@ -707,12 +721,9 @@ def fit_qr_trend(da, doy_start, doy_end, qs_to_fit, nboot, max_iter=10000, lasty
         jitter = 2*half_width*np.random.rand(len(this_y_vec)) - half_width
         this_y_vec += jitter
 
-        if len(this_x_vec) == 0:
-            continue
-
         this_x_vec = np.vstack((np.ones(len(this_x_vec)), this_x_vec)).T
 
-        model = QuantReg(this_y_vec, this_x_vec, )
+        model = QuantReg(this_y_vec, this_x_vec)
 
         for ct_q, q in enumerate(qs_to_fit):
             mfit = model.fit(q=q, max_iter=max_iter)
@@ -734,15 +745,14 @@ def fit_qr_trend(da, doy_start, doy_end, qs_to_fit, nboot, max_iter=10000, lasty
             y_boot = xr.concat(y_boot, dim='time')
 
             pl = ~np.isnan(y_boot)
+            if np.sum(pl) == 0:  # case of no data
+                continue
             this_x_vec = x_boot[pl].values
             this_y_vec = y_boot[pl].values
 
             # Add jitter since data is rounded to 0.1
             jitter = 2*half_width*np.random.rand(len(this_y_vec)) - half_width
             this_y_vec += jitter
-
-            if len(this_x_vec) == 0:
-                continue
 
             this_x_vec = np.vstack((np.ones(len(this_x_vec)), this_x_vec)).T
 
