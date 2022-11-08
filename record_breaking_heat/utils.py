@@ -697,7 +697,7 @@ def fit_qr_trend(da, doy_start, doy_end, qs_to_fit, nboot, max_iter=10000, lasty
     cc = da_gmt.sel(time=this_da['time'])
     cc -= np.mean(cc)
 
-    beta_qr = np.nan*np.ones((len(this_da.station), len(qs_to_fit)))
+    beta_qr = np.nan*np.ones((len(this_da.station), len(qs_to_fit), 2))
     pval_qr = np.nan*np.ones((len(this_da.station), len(qs_to_fit)))
     beta_qr_boot = np.nan*np.ones((len(this_da.station), len(qs_to_fit), nboot))
 
@@ -727,7 +727,7 @@ def fit_qr_trend(da, doy_start, doy_end, qs_to_fit, nboot, max_iter=10000, lasty
 
         for ct_q, q in enumerate(qs_to_fit):
             mfit = model.fit(q=q, max_iter=max_iter)
-            beta_qr[station_count, ct_q] = mfit.params[-1]
+            beta_qr[station_count, ct_q, :] = mfit.params
             pval_qr[station_count, ct_q] = mfit.pvalues[-1]
 
         # Bootstrap with block size of one year to assess significance of differences
@@ -762,13 +762,14 @@ def fit_qr_trend(da, doy_start, doy_end, qs_to_fit, nboot, max_iter=10000, lasty
                 mfit = model.fit(q=q, max_iter=max_iter)
                 beta_qr_boot[station_count, ct_q, kk] = mfit.params[-1]
 
-    ds_QR = xr.Dataset(data_vars={'beta_QR': (('station', 'qs'), beta_qr),
+    ds_QR = xr.Dataset(data_vars={'beta_QR': (('station', 'qs', 'order'), beta_qr),
                                   'pval_QR': (('station', 'qs'), pval_qr),
                                   'beta_QR_boot': (('station', 'qs', 'sample'), beta_qr_boot)},
                        coords={'station': da.station,
                                'qs': qs_to_fit,
                                'sample': np.arange(nboot),
                                'lat': da.lat,
-                               'lon': da.lon})
+                               'lon': da.lon,
+                               'order': np.arange(2)})
 
     return ds_QR
