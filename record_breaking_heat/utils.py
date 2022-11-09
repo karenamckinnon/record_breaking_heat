@@ -659,7 +659,8 @@ def calc_station_stats(ds_fitted, varnames, doy_start, doy_end, last_year=2020):
     return ds_S, ds_K, ds_sigma, ds_rho1
 
 
-def fit_qr_trend(da, doy_start, doy_end, qs_to_fit, nboot, max_iter=10000, lastyear=2020):
+def fit_qr_trend(da, doy_start, doy_end, qs_to_fit, nboot, max_iter=10000, lastyear=2020,
+                 gmt_fname='/home/data/BEST/Land_and_Ocean_complete.txt', lowpass_freq=1/10, butter_order=3):
     """Fit a quantile regression model with GMT as covariate.
 
     Parameters
@@ -678,6 +679,12 @@ def fit_qr_trend(da, doy_start, doy_end, qs_to_fit, nboot, max_iter=10000, lasty
         Maximum number of iterations for QuantReg model
     lastyear : int
         Last year to calculate trend with
+    gmt_fname : str
+        Local location of GMT time series from BEST
+    lowpass_freq : float
+        Desired cutoff frequency for Butterworth filter (in 1/yr)
+    butter_order : int
+        Desired order for Butterworth filter
 
     Returns
     -------
@@ -691,7 +698,7 @@ def fit_qr_trend(da, doy_start, doy_end, qs_to_fit, nboot, max_iter=10000, lasty
     this_da = da.sel(time=time_idx).sel(time=slice('%04i' % lastyear)).copy()
 
     # global mean temperature time series as a stand-in for climate change in the regression model
-    da_gmt = get_GMT()
+    da_gmt = get_GMT(lowpass_freq=lowpass_freq, gmt_fname=gmt_fname, butter_order=butter_order)
     # resample GMT to daily, and match data time stamps
     da_gmt = da_gmt.resample(time='1D').interpolate('linear')
     cc = da_gmt.sel(time=this_da['time'])
