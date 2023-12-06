@@ -454,7 +454,7 @@ def fit_seasonal_trend(da, varname, nseasonal, ninteract, lastyear=2020, return_
             nlat = s[1]
             nlon = s[2]
         elif len(s) == 1:  # case where we are considering one gridbox only
-            nt_fit = s
+            nt_fit = s[0]
             nlat = 1
             nlon = 1
         vals = da_fit.values.reshape((nt_fit, nlat*nlon))
