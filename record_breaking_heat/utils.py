@@ -1,4 +1,4 @@
-from helpful_utilities.general import lowpass_butter
+from helpful_utilities.stats import lowpass_butter
 import numpy as np
 import pandas as pd
 import xarray as xr
@@ -465,8 +465,10 @@ def fit_seasonal_trend(da, varname, nseasonal, ninteract, lastyear=2020, return_
 
         # predict on full dataset
         yhat = np.dot(X_mat, beta)
-        ds_fitted = da.copy(data=np.array(yhat).reshape((nt, nlat, nlon))).to_dataset(name='%s_fit' % varname)
-
+        if len(s) == 3:
+            ds_fitted = da.copy(data=np.array(yhat).reshape((nt, nlat, nlon))).to_dataset(name='%s_fit' % varname)
+        elif len(s) == 1:
+            ds_fitted = da.copy(data=np.array(yhat).flatten()).to_dataset(name='%s_fit' % varname)
         residual = da - ds_fitted['%s_fit' % varname]
         ds_fitted['%s_residual' % varname] = residual
 
